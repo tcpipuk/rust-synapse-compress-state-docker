@@ -15,11 +15,11 @@ ENV RUSTFLAGS="-C target-feature=-crt-static"
 # set to true, so we expose it as a build-arg.
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
-ARG BUILD_PROFILE=dev
 
 RUN cargo build --release
 WORKDIR /opt/synapse-compressor/synapse_auto_compressor/
-RUN cargo build && find /opt/synapse-compressor/target/ -type f -name "synapse*"
+RUN cargo build --release
+RUN find /opt/synapse-compressor/target/ -type f -name "synapse*"
 
 # Live image stage
 FROM alpine:latest
