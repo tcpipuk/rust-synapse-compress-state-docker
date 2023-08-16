@@ -1,8 +1,6 @@
-# rust-synapse-compress-state-docker
+# Synapse State Compression Tool in Docker
 
 This repository provides a Docker container for the [rust-synapse-compress-state](https://github.com/matrix-org/rust-synapse-compress-state) project developed by Matrix.org. The primary purpose is to offer a convenient way to run the state compression tool for Synapse without dealing with manual installations and dependencies.
-
-The actual development and credit for the `rust-synapse-compress-state` tool goes to [Matrix.org](https://matrix.org/). This repository and Docker container are simply for packaging and distribution convenience.
 
 ## Repositories
 
