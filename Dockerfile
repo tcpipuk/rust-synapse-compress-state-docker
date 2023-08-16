@@ -16,7 +16,7 @@ RUN cargo build --release
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache libgcc
+RUN apk add --no-cache libgcc && find -type f /opt/synapse-compressor
 
 # Copy binaries from the builder stage
 COPY --from=builder /opt/synapse-compressor/target/*/synapse_compress_state /usr/local/bin/synapse_compress_state
