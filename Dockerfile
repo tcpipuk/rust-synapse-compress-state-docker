@@ -1,5 +1,5 @@
 # Builder stage
-FROM rust:1.54-alpine as builder
+FROM rust:alpine as builder
 
 # Install build dependencies
 RUN apk add --no-cache build-base git
