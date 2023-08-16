@@ -53,8 +53,8 @@ services:
     image: tcpipuk/rust-synapse-compress-state:latest
     environment:
       POSTGRES_USER: synapse
-      POSTGRES_PASSWORD: synapse
-      POSTGRES_DB: db
+      POSTGRES_PASSWORD: YOUR_PASSWORD
+      POSTGRES_DB: synapse
       POSTGRES_PATH: /path/to/socket/dir
 ```
 
