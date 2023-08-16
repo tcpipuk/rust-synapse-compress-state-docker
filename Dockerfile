@@ -12,7 +12,7 @@ WORKDIR /rust-synapse-compress-state
 RUN cargo build --release
 
 # Live image stage
-FROM alpine:stable
+FROM alpine:latest
 
 # Copy the built binary from the builder stage
 COPY --from=builder /rust-synapse-compress-state/target/release/synapse_auto_compressor /usr/local/bin/
