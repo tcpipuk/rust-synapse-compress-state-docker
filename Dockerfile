@@ -1,24 +1,16 @@
 # Builder stage
 FROM rust:alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git make musl-dev openssl-dev python3 pkgconfig
-
-# Clone the repository
-RUN git clone https://github.com/matrix-org/rust-synapse-compress-state.git /opt/synapse-compressor/
-WORKDIR /opt/synapse-compressor/
+# Install build dependencies and clone the repository in a single layer
+RUN apk add --no-cache git make musl-dev openssl-dev python3 pkgconfig && \
+    git clone https://github.com/matrix-org/rust-synapse-compress-state.git /opt/synapse-compressor/
 
 # Build the project
 ENV RUSTFLAGS="-C target-feature=-crt-static"
-
-# arm64 builds consume a lot of memory if `CARGO_NET_GIT_FETCH_WITH_CLI` is not
-# set to true, so we expose it as a build-arg.
-ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
-ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
-
-RUN cargo build --release
-WORKDIR /opt/synapse-compressor/synapse_auto_compressor/
-RUN cargo build --release
+WORKDIR /opt/synapse-compressor/
+RUN cargo build --release && \
+    cd synapse_auto_compressor && \
+    cargo build --release
 
 # Live image stage
 FROM alpine:latest
