@@ -25,7 +25,7 @@ ENV POSTGRES_USER="synapse" \
     POSTGRES_DB="synapse" \
     POSTGRES_PATH="" \
     CHUNK_SIZE="500" \
-    MIN_STATE_GROUP="100" \
+    CHUNKS_TO_COMPRESS="100" \
     COMPRESSION_LEVELS="100,50,25"
 
 # Script to determine the connection string based on environment variables

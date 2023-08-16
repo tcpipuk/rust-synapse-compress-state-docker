@@ -62,6 +62,6 @@ services:
 
 - `CHUNK_SIZE`: Determines the number of state groups to process at once. This is particularly useful for machines with limited memory as smaller chunk sizes can be set. If no space savings are found for the entire chunk, it's skipped. Default: "500".
   
-- `MIN_STATE_GROUP`: Specifies the number of chunks (of size `CHUNK_SIZE`) to compress. The higher this value, the longer the compression process will run. Default: "100".
+- `CHUNKS_TO_COMPRESS`: Specifies the number of chunks (of size `CHUNK_SIZE`) to compress. The higher this value, the longer the compression process will run. Default: "100".
   
 - `COMPRESSION_LEVELS`: Defines the sizes of each new level in the compression algorithm as a comma-separated list. The list's first entry is for the most granular level, with each subsequent entry for the next highest level. The total number of entries determines the algorithm's levels. The sum of the sizes impacts the state fetching performance from the database, as it sets the upper limit on the iterations needed to fetch a specific state set. Default: "100,50,25".
