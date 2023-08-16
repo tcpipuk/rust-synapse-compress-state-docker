@@ -19,7 +19,6 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
 RUN cargo build --release
 WORKDIR /opt/synapse-compressor/synapse_auto_compressor/
 RUN cargo build --release
-RUN find /opt/synapse-compressor/target/ -type f -name "synapse*"
 
 # Live image stage
 FROM alpine:latest
@@ -28,8 +27,10 @@ FROM alpine:latest
 RUN apk add --no-cache libgcc
 
 # Copy binaries from the builder stage
-COPY --from=builder /opt/synapse-compressor/target/*/synapse_compress_state /usr/local/bin/synapse_compress_state
-COPY --from=builder /opt/synapse-compressor/target/*/synapse_auto_compressor /usr/local/bin/synapse_auto_compressor
+COPY --from=builder \
+    /opt/synapse-compressor/target/*/synapse_compress_state \
+    /opt/synapse-compressor/target/*/synapse_auto_compressor \
+    /usr/local/bin/
 
 # Set default environment variables for the command arguments and Postgres details
 ENV POSTGRES_USER="synapse" \
