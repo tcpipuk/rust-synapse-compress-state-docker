@@ -1,21 +1,26 @@
 # Builder stage
-FROM rust:alpine as builder
+FROM rust:alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache build-base git openssl openssl-dev python3 pkgconfig
+RUN apk add --no-cache git make musl-dev openssl-dev python3 pkgconfig
 
 # Clone the repository
-RUN git clone https://github.com/matrix-org/rust-synapse-compress-state.git /rust-synapse-compress-state
-WORKDIR /rust-synapse-compress-state
+RUN git clone https://github.com/matrix-org/rust-synapse-compress-state.git /opt/synapse-compressor/
+WORKDIR /opt/synapse-compressor/
 
 # Build the project
+ENV RUSTFLAGS="-C target-feature=-crt-static"
 RUN cargo build --release
 
 # Live image stage
 FROM alpine:latest
 
-# Copy the built binary from the builder stage
-COPY --from=builder /rust-synapse-compress-state/target/release/synapse_auto_compressor /usr/local/bin/
+# Install runtime dependencies
+RUN apk add --no-cache libgcc
+
+# Copy binaries from the builder stage
+COPY --from=builder /opt/synapse-compressor/target/*/synapse_compress_state /usr/local/bin/synapse_compress_state
+COPY --from=builder /opt/synapse-compressor/target/*/synapse_auto_compressor /usr/local/bin/synapse_auto_compressor
 
 # Set default environment variables for the command arguments and Postgres details
 ENV POSTGRES_USER="synapse" \
