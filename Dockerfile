@@ -17,11 +17,9 @@ ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
 ARG BUILD_PROFILE=dev
 
-RUN cargo build --profile=$BUILD_PROFILE
-
+RUN cargo build --release
 WORKDIR /opt/synapse-compressor/synapse_auto_compressor/
-
-RUN cargo build && find /opt/synapse-compressor/ -type f
+RUN cargo build && find /opt/synapse-compressor/target/ -type f -name "synapse*"
 
 # Live image stage
 FROM alpine:latest
