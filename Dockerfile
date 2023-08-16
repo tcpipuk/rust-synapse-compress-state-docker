@@ -10,13 +10,24 @@ WORKDIR /opt/synapse-compressor/
 
 # Build the project
 ENV RUSTFLAGS="-C target-feature=-crt-static"
-RUN cargo build --release
+
+# arm64 builds consume a lot of memory if `CARGO_NET_GIT_FETCH_WITH_CLI` is not
+# set to true, so we expose it as a build-arg.
+ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
+ARG BUILD_PROFILE=dev
+
+RUN cargo build --profile=$BUILD_PROFILE
+
+WORKDIR /opt/synapse-compressor/synapse_auto_compressor/
+
+RUN cargo build && find /opt/synapse-compressor/ -type f
 
 # Live image stage
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache libgcc && find /opt/synapse-compressor/ -type f
+RUN apk add --no-cache libgcc
 
 # Copy binaries from the builder stage
 COPY --from=builder /opt/synapse-compressor/target/*/synapse_compress_state /usr/local/bin/synapse_compress_state
