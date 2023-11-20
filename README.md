@@ -61,7 +61,9 @@ services:
 ## Optional Environment Variables
 
 - `CHUNK_SIZE`: Determines the number of state groups to process at once. This is particularly useful for machines with limited memory as smaller chunk sizes can be set. If no space savings are found for the entire chunk, it's skipped. Default: "500".
-  
+
 - `CHUNKS_TO_COMPRESS`: Specifies the number of chunks (of size `CHUNK_SIZE`) to compress. The higher this value, the longer the compression process will run. Default: "100".
-  
+
 - `COMPRESSION_LEVELS`: Defines the sizes of each new level in the compression algorithm as a comma-separated list. The list's first entry is for the most granular level, with each subsequent entry for the next highest level. The total number of entries determines the algorithm's levels. The sum of the sizes impacts the state fetching performance from the database, as it sets the upper limit on the iterations needed to fetch a specific state set. Default: "100,50,25".
+
+- `RECOVER_AUTOMATICALLY`: Set `=1` to automatically drop the tables `state_compressor_progress`, `state_compressor_state`, and `state_compressor_total_progress` when the application exits with error code 101, which signifies that it's unable to resume until the progress data is cleared, which typically occurs if the room it was part-way through compressing last time has been purged.

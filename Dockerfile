@@ -16,7 +16,7 @@ RUN cargo build --release && \
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache libgcc
+RUN apk add --no-cache libgcc postgresql-client
 
 # Copy binaries from the builder stage
 COPY --from=builder \
@@ -33,7 +33,8 @@ ENV POSTGRES_USER="synapse" \
     POSTGRES_PATH="" \
     CHUNK_SIZE="500" \
     CHUNKS_TO_COMPRESS="100" \
-    COMPRESSION_LEVELS="100,50,25"
+    COMPRESSION_LEVELS="100,50,25" \
+    RECOVER_AUTOMATICALLY=0
 
 # Script to determine the connection string based on environment variables
 COPY entrypoint.sh /entrypoint.sh
