@@ -22,19 +22,20 @@ fi
 # Check for exit code 101 and RECOVER_AUTOMATICALLY flag
 if [ "$exit_code" -eq 101 ]; then
     if [ "$RECOVER_AUTOMATICALLY" -eq 1 ]; then
-        echo -e "RECOVER_AUTOMATICALLY is set to 1, so attempting to automatically drop state_compressor_progress, state_compressor_state, and state_compressor_total_progress tables."
+        echo -e "RECOVER_AUTOMATICALLY=1 so attempting to automatically recover by dropping state_compressor_progress, state_compressor_state, and state_compressor_total_progress tables."
         # Drop specified tables using the local psql command
         PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c "DROP TABLE state_compressor_progress; DROP TABLE state_compressor_state; DROP TABLE state_compressor_total_progress;"
     else
-        echo "The compressor is unable to continue, possibly because the room it was last working on has been purged."
-        echo "It's recommended to DROP the tables state_compressor_progress, state_compressor_state, and state_compressor_total_progress in the Synapse database to continue."
+        echo "The compressor encountered an error, check the logs above for more details."
+        echo "If recovery is needed, consider dropping the tables state_compressor_progress, state_compressor_state, and state_compressor_total_progress in the Synapse database, which you can do automatically by setting RECOVER_AUTOMATICALLY=1 in this container's environment variables."
     fi
 fi
 
 # Check for exit code 137
 if [ "$exit_code" -eq 137 ]; then
-    # Output a message indicating the compressor reached its limit
-    echo "The compressor has reached its limit of chunks to compress and has ended. It will need to be started again to resume."
+    # Output a message indicating the compressor was terminated by the system, possibly due to memory constraints
+    echo "The compressor was terminated by the system, likely due to reaching memory limits."
+    echo "Check your configured limits in Docker in case they are too restrictive, otherwise consider lowering the CHUNK_SIZE or CHUNKS_TO_COMPRESS limits."
 fi
 
 # Exit with the original exit code
