@@ -66,4 +66,16 @@ services:
 
 - `COMPRESSION_LEVELS`: Defines the sizes of each new level in the compression algorithm as a comma-separated list. The list's first entry is for the most granular level, with each subsequent entry for the next highest level. The total number of entries determines the algorithm's levels. The sum of the sizes impacts the state fetching performance from the database, as it sets the upper limit on the iterations needed to fetch a specific state set. Default: "100,50,25".
 
-- `RECOVER_AUTOMATICALLY`: Set `=1` to automatically drop the tables `state_compressor_progress`, `state_compressor_state`, and `state_compressor_total_progress` when encountering error code 101, which signifies that it's unable to resume until the progress data is cleared, which is a Rust panic code that typically occurs if the room it was previously compressing last time has been purged.
+## Troubleshooting
+
+### Understanding Exit Codes
+
+The tool may exit with specific codes, indicating various states or issues:
+
+- **Exit Code 0**: Normal exit. The compressor has completed its task without any errors.
+- **Exit Code 101**: Indicates a Rust panic, often due to the room it was previously compressing being purged from the Synapse database. If `RECOVER_AUTOMATICALLY=1` is set, the tool will attempt to automatically recover by dropping the `state_compressor_progress`, `state_compressor_state`, and `state_compressor_total_progress` tables.
+- **Exit Code 137**: This typically indicates that the compressor was terminated by the system, likely due to reaching memory limits. The defaults can consume over 1GB of memory on a large room, so consider checking your Docker configured limits and possibly lowering the `CHUNK_SIZE` or `CHUNKS_TO_COMPRESS` values.
+
+### Automatic Recovery
+
+Setting `RECOVER_AUTOMATICALLY=1` in environment variables enables the tool to automatically drop the `state_compressor_progress`, `state_compressor_state`, and `state_compressor_total_progress` tables and start from scratch when critical failures (error code 101) occur. While this can resolve common issues, such as a room being purged from the Synapse database, it should be used with caution as it involves modifying the database schema - users enable this feature at their own risk.
