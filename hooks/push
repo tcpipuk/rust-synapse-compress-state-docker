@@ -1,0 +1,3 @@
+#!/bin/bash
+
+# This hook is intentionally left empty as the build hook already pushes the image
