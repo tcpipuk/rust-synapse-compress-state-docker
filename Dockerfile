@@ -2,7 +2,7 @@
 FROM rust:alpine AS builder
 
 # Install build dependencies and clone the repository in a single layer
-RUN apk add --no-cache git make musl-dev openssl-dev python3 pkgconfig && \
+RUN apk add --no-cache git make musl-dev openssl-dev perl python3 pkgconfig && \
     git clone https://github.com/matrix-org/rust-synapse-compress-state.git /opt/synapse-compressor/
 
 # Build the project
