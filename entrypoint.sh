@@ -22,7 +22,7 @@ fi
 # Check for exit code 101 and RECOVER_AUTOMATICALLY flag
 if [ "$exit_code" -eq 101 ]; then
     if [ "$RECOVER_AUTOMATICALLY" -eq 1 ]; then
-        echo -e "RECOVER_AUTOMATICALLY=1 so attempting to automatically recover by dropping state_compressor_progress, state_compressor_state, and state_compressor_total_progress tables."
+        echo "RECOVER_AUTOMATICALLY=1 so attempting to automatically recover by dropping state_compressor_progress, state_compressor_state, and state_compressor_total_progress tables."
         # Drop specified tables using the local psql command
         psql -d "$POSTGRES_LOCATION" -c "DROP TABLE state_compressor_progress; DROP TABLE state_compressor_state; DROP TABLE state_compressor_total_progress;"
     else
