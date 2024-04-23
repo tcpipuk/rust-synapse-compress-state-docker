@@ -22,9 +22,9 @@ fi
 # Check for exit code 101 and RECOVER_AUTOMATICALLY flag
 if [ "$exit_code" -eq 101 ]; then
     if [ "$RECOVER_AUTOMATICALLY" -eq 1 ]; then
-        echo -e "RECOVER_AUTOMATICALLY=1 so attempting to automatically recover by dropping state_compressor_progress, state_compressor_state, and state_compressor_total_progress tables."
+        echo "RECOVER_AUTOMATICALLY=1 so attempting to automatically recover by dropping state_compressor_progress, state_compressor_state, and state_compressor_total_progress tables."
         # Drop specified tables using the local psql command
-        PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c "DROP TABLE state_compressor_progress; DROP TABLE state_compressor_state; DROP TABLE state_compressor_total_progress;"
+        psql -d "$POSTGRES_LOCATION" -c "DROP TABLE state_compressor_progress; DROP TABLE state_compressor_state; DROP TABLE state_compressor_total_progress;"
     else
         echo "The compressor encountered an error, check the logs above for more details."
         echo "If recovery is needed, consider dropping the tables state_compressor_progress, state_compressor_state, and state_compressor_total_progress in the Synapse database, which you can do automatically by setting RECOVER_AUTOMATICALLY=1 in this container's environment variables."
