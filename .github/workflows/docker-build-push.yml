@@ -10,18 +10,134 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  docker:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  build-binaries:
+    name: Build Rust Binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            arch: amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            arch: arm64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
+
+      - name: Use Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Clone rust-synapse-compress-state
+        run: git clone https://github.com/matrix-org/rust-synapse-compress-state.git
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools libssl-dev pkg-config
+
+      - name: Build binaries
+        working-directory: rust-synapse-compress-state
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
+          RUSTFLAGS: "-C target-feature=-crt-static"
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          cd synapse_auto_compressor
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Create directory for binaries
+        run: mkdir -p ./binaries/${{ matrix.arch }}
+
+      - name: Copy binaries
+        run: |
+          cp rust-synapse-compress-state/target/${{ matrix.target }}/release/synapse_compress_state ./binaries/${{ matrix.arch }}/
+          cp rust-synapse-compress-state/target/${{ matrix.target }}/release/synapse_auto_compressor ./binaries/${{ matrix.arch }}/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd ./binaries/${{ matrix.arch }}
+          sha256sum synapse_compress_state > synapse_compress_state.sha256
+          sha256sum synapse_auto_compressor > synapse_auto_compressor.sha256
+
+      - name: Upload binaries as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-synapse-compress-state-${{ matrix.arch }}
+          path: |
+            ./binaries/${{ matrix.arch }}/synapse_compress_state
+            ./binaries/${{ matrix.arch }}/synapse_auto_compressor
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-synapse-compress-state-${{ matrix.arch }}-checksums
+          path: |
+            ./binaries/${{ matrix.arch }}/*.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  build-docker:
+    name: Build and Push Docker Image
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Create a directory structure for each architecture
+      - name: Create directories for binaries
+        run: |
+          mkdir -p ./bin/amd64
+          mkdir -p ./bin/arm64
+
+      # Download binaries for each architecture
+      - name: Download amd64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-synapse-compress-state-amd64
+          path: ./bin/amd64
+
+      - name: Download arm64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-synapse-compress-state-arm64
+          path: ./bin/arm64
+
+      # Make all binaries executable
+      - name: Make binaries executable
+        run: |
+          chmod +x ./bin/amd64/*
+          chmod +x ./bin/arm64/*
+
+      # Set up for multi-architecture builds
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -29,12 +145,63 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Create a multi-stage Dockerfile for clean architecture handling
+      - name: Create multi-arch Dockerfile
+        run: |
+          cat > Dockerfile.multiarch << 'EOL'
+          # First stage - select the correct binaries based on target architecture
+          FROM --platform=$TARGETPLATFORM alpine:latest AS binary-selector
+
+          ARG TARGETPLATFORM
+
+          # Create directory for the selected binaries
+          RUN mkdir -p /selected-binaries
+
+          # Copy binaries conditionally based on platform
+          COPY bin/amd64/synapse_compress_state bin/amd64/synapse_auto_compressor /amd64-binaries/
+          COPY bin/arm64/synapse_compress_state bin/arm64/synapse_auto_compressor /arm64-binaries/
+
+          # Select the correct binaries based on platform
+          RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+                cp /arm64-binaries/* /selected-binaries/; \
+              else \
+                cp /amd64-binaries/* /selected-binaries/; \
+              fi
+
+          # Final stage - clean image with only the needed binaries
+          FROM --platform=$TARGETPLATFORM alpine:latest
+
+          # Install runtime dependencies
+          RUN apk add --no-cache libgcc postgresql-client
+
+          # Copy only the selected binaries for this architecture
+          COPY --from=binary-selector /selected-binaries/synapse_compress_state /usr/local/bin/
+          COPY --from=binary-selector /selected-binaries/synapse_auto_compressor /usr/local/bin/
+
+          # Set default environment variables
+          ENV POSTGRES_USER="" \
+            POSTGRES_PASSWORD="" \
+            POSTGRES_HOST="127.0.0.1" \
+            POSTGRES_PORT="5432" \
+            POSTGRES_DB="synapse" \
+            POSTGRES_PATH="" \
+            CHUNK_SIZE="500" \
+            CHUNKS_TO_COMPRESS="100" \
+            COMPRESSION_LEVELS="100,50,25" \
+            RECOVER_AUTOMATICALLY=0
+
+          # Copy entrypoint script
+          COPY entrypoint.sh /entrypoint.sh
+          RUN chmod +x /entrypoint.sh
+
+          ENTRYPOINT ["/entrypoint.sh"]
+          EOL
 
       - name: Extract Docker metadata
         id: meta
@@ -43,82 +210,19 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/rust-synapse-compress-state
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
-      - name: Build and push
+      - name: Build and push multi-architecture Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64/v8
-          push: ${{ github.event_name != 'pull_request' }}
+          file: ./Dockerfile.multiarch
+          platforms: linux/amd64,linux/arm64
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=image,name=target
-
-  extract-binaries:
-    name: Extract and Upload Binaries
-    runs-on: ubuntu-latest
-    needs: docker
-    if: github.event_name != 'pull_request'
-
-    strategy:
-      matrix:
-        platform: [amd64, arm64]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build image for binary extraction
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/${{ matrix.platform }}
-          load: true
-          tags: temp-image:latest
-          target: builder
-          cache-from: type=gha
-
-      - name: Create directory for binaries
-        run: mkdir -p ./binaries
-
-      - name: Extract binaries from container
-        run: |
-          container_id=$(docker create temp-image:latest)
-          docker cp $container_id:/opt/synapse-compressor/target/release/synapse_compress_state ./binaries/synapse_compress_state-${{ matrix.platform }}
-          docker cp $container_id:/opt/synapse-compressor/target/release/synapse_auto_compressor ./binaries/synapse_auto_compressor-${{ matrix.platform }}
-          docker rm $container_id
-
-      - name: Upload binaries as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-synapse-compress-state-${{ matrix.platform }}
-          path: |
-            ./binaries/synapse_compress_state-${{ matrix.platform }}
-            ./binaries/synapse_auto_compressor-${{ matrix.platform }}
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Generate SHA256 checksums
-        run: |
-          cd ./binaries
-          sha256sum synapse_compress_state-${{ matrix.platform }} > synapse_compress_state-${{ matrix.platform }}.sha256
-          sha256sum synapse_auto_compressor-${{ matrix.platform }} > synapse_auto_compressor-${{ matrix.platform }}.sha256
-
-      - name: Upload checksums as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-synapse-compress-state-${{ matrix.platform }}-checksums
-          path: |
-            ./binaries/*.sha256
-          if-no-files-found: error
-          retention-days: 30
