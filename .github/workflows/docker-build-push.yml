@@ -1,0 +1,124 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/rust-synapse-compress-state
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64/v8
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=image,name=target
+
+  extract-binaries:
+    name: Extract and Upload Binaries
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name != 'pull_request'
+
+    strategy:
+      matrix:
+        platform: [amd64, arm64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for binary extraction
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/${{ matrix.platform }}
+          load: true
+          tags: temp-image:latest
+          target: builder
+          cache-from: type=gha
+
+      - name: Create directory for binaries
+        run: mkdir -p ./binaries
+
+      - name: Extract binaries from container
+        run: |
+          container_id=$(docker create temp-image:latest)
+          docker cp $container_id:/opt/synapse-compressor/target/release/synapse_compress_state ./binaries/synapse_compress_state-${{ matrix.platform }}
+          docker cp $container_id:/opt/synapse-compressor/target/release/synapse_auto_compressor ./binaries/synapse_auto_compressor-${{ matrix.platform }}
+          docker rm $container_id
+
+      - name: Upload binaries as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-synapse-compress-state-${{ matrix.platform }}
+          path: |
+            ./binaries/synapse_compress_state-${{ matrix.platform }}
+            ./binaries/synapse_auto_compressor-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd ./binaries
+          sha256sum synapse_compress_state-${{ matrix.platform }} > synapse_compress_state-${{ matrix.platform }}.sha256
+          sha256sum synapse_auto_compressor-${{ matrix.platform }} > synapse_auto_compressor-${{ matrix.platform }}.sha256
+
+      - name: Upload checksums as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-synapse-compress-state-${{ matrix.platform }}-checksums
+          path: |
+            ./binaries/*.sha256
+          if-no-files-found: error
+          retention-days: 30
