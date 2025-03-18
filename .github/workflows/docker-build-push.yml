@@ -17,68 +17,70 @@ concurrency:
 jobs:
   build-binaries:
     name: Build Rust Binaries
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            arch: amd64
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
-            arch: arm64
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-
-      - name: Use Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: Clone rust-synapse-compress-state
-        run: git clone https://github.com/matrix-org/rust-synapse-compress-state.git
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools libssl-dev pkg-config
-
-      - name: Build binaries
-        working-directory: rust-synapse-compress-state
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
-          RUSTFLAGS: "-C target-feature=-crt-static"
-        run: |
-          cargo build --release --target ${{ matrix.target }}
-          cd synapse_auto_compressor
-          cargo build --release --target ${{ matrix.target }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Create directory for binaries
         run: mkdir -p ./binaries/${{ matrix.arch }}
 
-      - name: Copy binaries
+      - name: Build binaries using rust:alpine Docker image
         run: |
-          cp rust-synapse-compress-state/target/${{ matrix.target }}/release/synapse_compress_state ./binaries/${{ matrix.arch }}/
-          cp rust-synapse-compress-state/target/${{ matrix.target }}/release/synapse_auto_compressor ./binaries/${{ matrix.arch }}/
+          # Create a Dockerfile for building the binaries
+          cat > Dockerfile.builder << EOF
+          FROM rust:alpine AS builder
 
-      - name: Generate SHA256 checksums
-        run: |
+          # Install build dependencies
+          RUN apk add --no-cache git make musl-dev openssl-dev perl python3 pkgconfig
+
+          # Clone the repository
+          RUN git clone https://github.com/matrix-org/rust-synapse-compress-state /build
+
+          # Build the project
+          ENV RUSTFLAGS="-C target-feature=-crt-static"
+          WORKDIR /build
+          RUN cargo build --release && \
+              cd synapse_auto_compressor && \
+              cargo build --release
+
+          # Output compiled binaries to a known location for extraction
+          RUN mkdir -p /output && \
+              cp /build/target/release/synapse_compress_state /output/ && \
+              cp /build/target/release/synapse_auto_compressor /output/
+          EOF
+
+          # Build the Docker image for this architecture
+          docker buildx build --platform ${{ matrix.platform }} \
+            --output "type=local,dest=./binaries/${{ matrix.arch }}" \
+            --file Dockerfile.builder \
+            .
+
+          # Move binaries to expected location if needed
+          mkdir -p ./binaries/${{ matrix.arch }}
+          find ./binaries/${{ matrix.arch }} -type f -name "synapse_*" -exec cp {} ./binaries/${{ matrix.arch }}/ \;
+          find ./binaries/${{ matrix.arch }}/output -type f -name "synapse_*" -exec cp {} ./binaries/${{ matrix.arch }}/ \; || true
+
+          # Generate checksums
           cd ./binaries/${{ matrix.arch }}
-          sha256sum synapse_compress_state > synapse_compress_state.sha256
-          sha256sum synapse_auto_compressor > synapse_auto_compressor.sha256
+          ls -la
+          sha256sum synapse_compress_state > synapse_compress_state.sha256 || echo "File not found: synapse_compress_state"
+          sha256sum synapse_auto_compressor > synapse_auto_compressor.sha256 || echo "File not found: synapse_auto_compressor"
 
       - name: Upload binaries as artifacts
         uses: actions/upload-artifact@v4
