@@ -1,10 +1,9 @@
-name: Build and Push Docker Images
+name: Build Binaries and Docker Images
 
 on:
   push:
     branches:
       - main
-      - dev
   pull_request:
     branches:
       - main
@@ -76,28 +75,13 @@ jobs:
           find ./binaries/${{ matrix.arch }} -type f -name "synapse_*" -exec cp {} ./binaries/${{ matrix.arch }}/ \;
           find ./binaries/${{ matrix.arch }}/output -type f -name "synapse_*" -exec cp {} ./binaries/${{ matrix.arch }}/ \; || true
 
-          # Generate checksums
-          cd ./binaries/${{ matrix.arch }}
-          ls -la
-          sha256sum synapse_compress_state > synapse_compress_state.sha256 || echo "File not found: synapse_compress_state"
-          sha256sum synapse_auto_compressor > synapse_auto_compressor.sha256 || echo "File not found: synapse_auto_compressor"
-
       - name: Upload binaries as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rust-synapse-compress-state-${{ matrix.arch }}
+          name: binaries-${{ matrix.arch }}-musl
           path: |
             ./binaries/${{ matrix.arch }}/synapse_compress_state
             ./binaries/${{ matrix.arch }}/synapse_auto_compressor
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Upload checksums
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-synapse-compress-state-${{ matrix.arch }}-checksums
-          path: |
-            ./binaries/${{ matrix.arch }}/*.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -124,13 +108,13 @@ jobs:
       - name: Download amd64 binaries
         uses: actions/download-artifact@v4
         with:
-          name: rust-synapse-compress-state-amd64
+          name: binaries-amd64-musl
           path: ./bin/amd64
 
       - name: Download arm64 binaries
         uses: actions/download-artifact@v4
         with:
-          name: rust-synapse-compress-state-arm64
+          name: binaries-arm64-musl
           path: ./bin/arm64
 
       # Make all binaries executable
