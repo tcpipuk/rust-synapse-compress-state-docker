@@ -1,0 +1,214 @@
+name: Build Binaries and Docker Images
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-binaries:
+    name: Build Rust Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create directory for binaries
+        run: mkdir -p ./binaries/${{ matrix.arch }}
+
+      - name: Build binaries using rust:alpine Docker image
+        run: |
+          # Create a Dockerfile for building the binaries
+          cat > Dockerfile.builder << EOF
+          FROM rust:alpine AS builder
+
+          # Install build dependencies
+          RUN apk add --no-cache git make musl-dev openssl-dev perl python3 pkgconfig
+
+          # Clone the repository
+          RUN git clone https://github.com/matrix-org/rust-synapse-compress-state /build
+
+          # Build the project
+          ENV RUSTFLAGS="-C target-feature=-crt-static"
+          WORKDIR /build
+          RUN cargo build --release && \
+              cd synapse_auto_compressor && \
+              cargo build --release
+
+          # Output compiled binaries to a known location for extraction
+          RUN mkdir -p /output && \
+              cp /build/target/release/synapse_compress_state /output/ && \
+              cp /build/target/release/synapse_auto_compressor /output/
+          EOF
+
+          # Build the Docker image for this architecture
+          docker buildx build --platform ${{ matrix.platform }} \
+            --output "type=local,dest=./binaries/${{ matrix.arch }}" \
+            --file Dockerfile.builder \
+            .
+
+          # Move binaries to expected location if needed
+          mkdir -p ./binaries/${{ matrix.arch }}
+          find ./binaries/${{ matrix.arch }} -type f -name "synapse_*" -exec cp {} ./binaries/${{ matrix.arch }}/ \;
+          find ./binaries/${{ matrix.arch }}/output -type f -name "synapse_*" -exec cp {} ./binaries/${{ matrix.arch }}/ \; || true
+
+      - name: Upload binaries as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.arch }}-musl
+          path: |
+            ./binaries/${{ matrix.arch }}/synapse_compress_state
+            ./binaries/${{ matrix.arch }}/synapse_auto_compressor
+          if-no-files-found: error
+          retention-days: 90
+
+  build-docker:
+    name: Build and Push Docker Image
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Create a directory structure for each architecture
+      - name: Create directories for binaries
+        run: |
+          mkdir -p ./bin/amd64
+          mkdir -p ./bin/arm64
+
+      # Download binaries for each architecture
+      - name: Download amd64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-amd64-musl
+          path: ./bin/amd64
+
+      - name: Download arm64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-arm64-musl
+          path: ./bin/arm64
+
+      # Make all binaries executable
+      - name: Make binaries executable
+        run: |
+          chmod +x ./bin/amd64/*
+          chmod +x ./bin/arm64/*
+
+      # Set up for multi-architecture builds
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Create a multi-stage Dockerfile for clean architecture handling
+      - name: Create multi-arch Dockerfile
+        run: |
+          cat > Dockerfile.multiarch << 'EOL'
+          # First stage - select the correct binaries based on target architecture
+          FROM --platform=$TARGETPLATFORM alpine:latest AS binary-selector
+
+          ARG TARGETPLATFORM
+
+          # Create directory for the selected binaries
+          RUN mkdir -p /selected-binaries
+
+          # Copy binaries conditionally based on platform
+          COPY bin/amd64/synapse_compress_state bin/amd64/synapse_auto_compressor /amd64-binaries/
+          COPY bin/arm64/synapse_compress_state bin/arm64/synapse_auto_compressor /arm64-binaries/
+
+          # Select the correct binaries based on platform
+          RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+                cp /arm64-binaries/* /selected-binaries/; \
+              else \
+                cp /amd64-binaries/* /selected-binaries/; \
+              fi
+
+          # Final stage - clean image with only the needed binaries
+          FROM --platform=$TARGETPLATFORM alpine:latest
+
+          # Install runtime dependencies
+          RUN apk add --no-cache libgcc postgresql-client
+
+          # Copy only the selected binaries for this architecture
+          COPY --from=binary-selector /selected-binaries/synapse_compress_state /usr/local/bin/
+          COPY --from=binary-selector /selected-binaries/synapse_auto_compressor /usr/local/bin/
+
+          # Set default environment variables
+          ENV POSTGRES_USER="" \
+            POSTGRES_PASSWORD="" \
+            POSTGRES_HOST="127.0.0.1" \
+            POSTGRES_PORT="5432" \
+            POSTGRES_DB="synapse" \
+            POSTGRES_PATH="" \
+            CHUNK_SIZE="500" \
+            CHUNKS_TO_COMPRESS="100" \
+            COMPRESSION_LEVELS="100,50,25" \
+            RECOVER_AUTOMATICALLY=0
+
+          # Copy entrypoint script
+          COPY entrypoint.sh /entrypoint.sh
+          RUN chmod +x /entrypoint.sh
+
+          ENTRYPOINT ["/entrypoint.sh"]
+          EOL
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/rust-synapse-compress-state
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+      - name: Build and push multi-architecture Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.multiarch
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
