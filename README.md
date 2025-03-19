@@ -5,11 +5,6 @@ This repository provides a Docker container for the
 project developed by Matrix.org. The primary purpose is to offer a convenient way to run the
 state compression tool for Synapse without dealing with manual installations and dependencies.
 
-## Repositories
-
-- [GitHub Repository](https://github.com/tcpipuk/rust-synapse-compress-state-docker)
-- [Docker Hub Repository](https://hub.docker.com/r/tcpipuk/rust-synapse-compress-state)
-
 ## How to Run
 
 ### Using Docker Run
@@ -17,15 +12,15 @@ state compression tool for Synapse without dealing with manual installations and
 **PostgreSQL with TCP port:**
 
 ```bash
-docker pull tcpipuk/rust-synapse-compress-state:latest
-docker run -e POSTGRES_USER="synapse" -e POSTGRES_PASSWORD="YOUR_PASSWORD" -e POSTGRES_DB="synapse" -e POSTGRES_HOST="db" -e POSTGRES_PORT="5432" tcpipuk/rust-synapse-compress-state:latest
+docker pull ghcr.io/tcpipuk/rust-synapse-compress-state:latest
+docker run -e POSTGRES_USER="synapse" -e POSTGRES_PASSWORD="YOUR_PASSWORD" -e POSTGRES_DB="synapse" -e POSTGRES_HOST="db" -e POSTGRES_PORT="5432" ghcr.io/tcpipuk/rust-synapse-compress-state:latest
 ```
 
 **PostgreSQL with Unix sockets:**
 
 ```bash
-docker pull tcpipuk/rust-synapse-compress-state:latest
-docker run -e POSTGRES_USER="synapse" -e POSTGRES_PASSWORD="YOUR_PASSWORD" -e POSTGRES_DB="db" -e POSTGRES_PATH="/path/to/socket/dir" tcpipuk/rust-synapse-compress-state:latest
+docker pull ghcr.io/tcpipuk/rust-synapse-compress-state:latest
+docker run -e POSTGRES_USER="synapse" -e POSTGRES_PASSWORD="YOUR_PASSWORD" -e POSTGRES_DB="db" -e POSTGRES_PATH="/path/to/socket/dir" ghcr.io/tcpipuk/rust-synapse-compress-state:latest
 ```
 
 ### Using docker-compose
@@ -37,7 +32,7 @@ version: '3'
 
 services:
   synapse-compress-state:
-    image: tcpipuk/rust-synapse-compress-state:latest
+    image: ghcr.io/tcpipuk/rust-synapse-compress-state:latest
     environment:
       POSTGRES_USER: synapse
       POSTGRES_PASSWORD: YOUR_PASSWORD
@@ -53,7 +48,7 @@ version: '3'
 
 services:
   synapse-compress-state:
-    image: tcpipuk/rust-synapse-compress-state:latest
+    image: ghcr.io/tcpipuk/rust-synapse-compress-state:latest
     environment:
       POSTGRES_USER: synapse
       POSTGRES_PASSWORD: YOUR_PASSWORD
