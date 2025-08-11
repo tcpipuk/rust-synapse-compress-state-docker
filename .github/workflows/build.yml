@@ -106,13 +106,13 @@ jobs:
 
       # Download binaries for each architecture
       - name: Download amd64 binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: binaries-amd64-musl
           path: ./bin/amd64
 
       - name: Download arm64 binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: binaries-arm64-musl
           path: ./bin/arm64
